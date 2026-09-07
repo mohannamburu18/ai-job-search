@@ -178,6 +178,7 @@ ai-job-search/
 │   │   ├── gmail-sync.md              # /gmail-sync auto-detect application status from Gmail
 │   │   ├── interview.md               # /interview stage-specific prep pack + mock interview
 │   │   ├── html-report.md             # /html-report generate application tracker dashboard
+
 │   │   ├── notion-sync.md             # /notion-sync one-way pipeline view in a Notion database
 │   │   └── reset.md                   # /reset wipe profile data or documents folder
 │   ├── skills/

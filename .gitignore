@@ -1,6 +1,20 @@
 # Dependencies
 node_modules/
+frontend/node_modules/
 bun.lock
+
+# Next.js
+.next/
+frontend/.next/
+out/
+frontend/out/
+
+# Database & local state
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+backend/data/
 
 # Python
 __pycache__/
