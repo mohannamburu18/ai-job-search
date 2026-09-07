@@ -206,3 +206,4 @@ def get_ai_provider() -> AIProvider:
     else:
         logger.info("Initializing DeterministicRuleProvider (zero-cost, fact-grounded fallback)")
         return DeterministicRuleProvider()
+

@@ -48,3 +48,4 @@ def lookup_salary_benchmark(company: str, city: Optional[str] = None) -> Dict[st
         },
         "source": "Market Aggregated"
     }
+

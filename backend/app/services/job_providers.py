@@ -414,3 +414,4 @@ _service_instance = AggregatedJobSearchService()
 
 def get_job_service() -> AggregatedJobSearchService:
     return _service_instance
+
