@@ -34,7 +34,7 @@ class Settings:
     COMPANY_RESEARCH_DIR: Path = BASE_DIR / "company_research"
     SEEN_JOBS_FILE: Path = BASE_DIR / "job_scraper" / "seen_jobs.json"
     TRACKER_CSV_FILE: Path = BASE_DIR / "job_search_tracker.csv"
-    CANDIDATE_PROFILE_FILE: Path = BASE_DIR / ".claude" / "skills" / "job-application-assistant" / "01-candidate-profile.md"
+    CANDIDATE_PROFILE_FILE: Path = BASE_DIR / "documents" / "cv" / "candidate_profile.md"
     CLAUDE_MD_FILE: Path = BASE_DIR / "CLAUDE.md"
     
     DATABASE_PATH: Path = DATA_DIR / "ai_job_search.db"

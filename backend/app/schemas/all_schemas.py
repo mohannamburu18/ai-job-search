@@ -163,17 +163,20 @@ class CoverLetterResponse(BaseModel):
 
 # ATS Check
 class ATSCheckResponse(BaseModel):
-    status: str
-    pages: int
-    char_count: int
-    extractor: str
-    has_contact_details: bool
-    reading_order_valid: bool
-    clean_text_layer: bool
-    missing_terms: List[str]
-    covered_terms: List[str]
-    ats_score: int
-    extracted_text_preview: str
+    model_config = {"extra": "ignore"}
+
+    status: str = "pass"
+    pages: int = 1
+    char_count: int = 0
+    extractor: str = "pypdf"
+    has_contact_details: bool = True
+    reading_order_valid: bool = True
+    clean_text_layer: bool = True
+    missing_terms: List[str] = []
+    covered_terms: List[str] = []
+    ats_score: int = 90
+    extracted_text_preview: str = ""
+
 
 # Applications
 class ApplicationCreate(BaseModel):

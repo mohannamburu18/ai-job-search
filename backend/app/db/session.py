@@ -3,7 +3,39 @@ import json
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Any, Dict, List, Optional
+import os
+
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker, Session
 from backend.app.core.config import settings
+from backend.app.db.models import Base
+
+# Database URL: uses DATABASE_URL env var if defined (e.g. postgresql://...), otherwise SQLite
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    db_file = str(settings.DATABASE_PATH)
+    DATABASE_URL = f"sqlite:///{db_file}"
+
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args,
+    pool_pre_ping=True,
+)
+
+# Enable WAL mode and foreign keys for SQLite
+if DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def dict_factory(cursor, row):
     d = {}
@@ -20,6 +52,7 @@ def get_db_connection() -> sqlite3.Connection:
 
 @contextmanager
 def get_db() -> Generator[sqlite3.Connection, None, None]:
+    """Legacy context manager yielding sqlite3 connection for backward compatibility."""
     conn = get_db_connection()
     try:
         yield conn
@@ -30,160 +63,77 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
     finally:
         conn.close()
 
+def get_sqlalchemy_session() -> Generator[Session, None, None]:
+    """FastAPI dependency yielding SQLAlchemy Session."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 def init_db():
-    """Create tables if they do not exist."""
+    """Create all SQLAlchemy tables and ensure default directory structures exist."""
+    # 1. Create SQLAlchemy declarative tables
+    Base.metadata.create_all(bind=engine)
+
+    # 2. Ensure directories exist
+    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    settings.CV_DIR.mkdir(parents=True, exist_ok=True)
+    settings.COVER_LETTERS_DIR.mkdir(parents=True, exist_ok=True)
+    settings.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 3. Seed default user if not exists
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            hashed_password TEXT NOT NULL,
-            full_name TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS profiles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER UNIQUE NOT NULL,
-            name TEXT,
-            email TEXT,
-            phone TEXT,
-            location TEXT,
-            linkedin_url TEXT,
-            github_url TEXT,
-            portfolio_url TEXT,
-            cv_language TEXT DEFAULT 'English',
-            employment_status TEXT,
-            languages TEXT, -- JSON list of {language, level, notes}
-            education TEXT, -- JSON list of {degree, institution, start, end, topics, thesis}
-            experience TEXT, -- JSON list of {title, company, location, start, end, bullets}
-            skills_primary TEXT, -- JSON list
-            skills_secondary TEXT, -- JSON list
-            tools_software TEXT, -- JSON list
-            projects TEXT, -- JSON list of {name, description, link}
-            certifications TEXT, -- JSON list of {name, hours, date}
-            behavioral_profile TEXT, -- JSON {traits, strengths, growth_areas, thrives_in}
-            target_roles TEXT, -- JSON list
-            target_locations TEXT, -- JSON list
-            remote_preference TEXT, -- remote, hybrid, onsite, any
-            deal_breakers TEXT, -- JSON list
-            raw_resume_text TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS jobs (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            company TEXT NOT NULL,
-            location TEXT,
-            work_mode TEXT,
-            url TEXT,
-            source TEXT,
-            date_posted TEXT,
-            deadline TEXT,
-            skills TEXT, -- JSON list
-            description TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS job_analyses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id TEXT NOT NULL,
-            user_id INTEGER NOT NULL,
-            overall_score INTEGER NOT NULL,
-            technical_score INTEGER NOT NULL,
-            experience_score INTEGER NOT NULL,
-            behavioral_score INTEGER NOT NULL,
-            career_score INTEGER NOT NULL,
-            location_verdict TEXT NOT NULL,
-            language_gate TEXT NOT NULL,
-            verdict TEXT NOT NULL,
-            strengths TEXT, -- JSON list
-            gaps TEXT, -- JSON list
-            recommendations TEXT, -- JSON list
-            why_match TEXT,
-            what_to_improve TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
-        );
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS applications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            job_id TEXT,
-            company TEXT NOT NULL,
-            role TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'saved', -- saved, ready, applied, screening, interview, offer, rejected, withdrawn
-            date_applied TEXT,
-            deadline TEXT,
-            channel TEXT,
-            contact_person TEXT,
-            fit_rating INTEGER,
-            notes TEXT,
-            cv_file TEXT,
-            cover_letter_file TEXT,
-            source_url TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tailored_resumes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            job_id TEXT NOT NULL,
-            latex_content TEXT NOT NULL,
-            pdf_path TEXT,
-            changes_made TEXT, -- JSON list
-            ats_score INTEGER,
-            ats_feedback TEXT, -- JSON
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
-        );
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS cover_letters (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            job_id TEXT NOT NULL,
-            tone TEXT DEFAULT 'Professional',
-            latex_content TEXT NOT NULL,
-            text_content TEXT NOT NULL,
-            pdf_path TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
-        );
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS interview_sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            job_id TEXT,
-            application_id INTEGER,
-            stage TEXT NOT NULL DEFAULT 'technical',
-            prep_pack TEXT, -- JSON
-            chat_history TEXT, -- JSON list of {role, content, timestamp}
-            feedback TEXT, -- JSON
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-        """)
-
+        # Ensure schema compatibility
+        cursor.execute("SELECT id FROM users WHERE email = 'candidate@aijobsearch.dev'")
+        row = cursor.fetchone()
+        if not row:
+            from backend.app.core.security import get_password_hash
+            cursor.execute(
+                """
+                INSERT INTO users (email, hashed_password, name)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    "candidate@aijobsearch.dev",
+                    get_password_hash("password123"),
+                    "Alex Rivers"
+                )
+            )
+            user_id = cursor.lastrowid
+            
+            # Seed profile matching repository candidate specs
+            skills_primary = ["Python", "TypeScript", "React", "Next.js", "FastAPI", "Node.js", "PostgreSQL"]
+            skills_secondary = ["Docker", "Kubernetes", "AWS", "Three.js", "GraphQL", "Redis", "CI/CD"]
+            tools_software = ["Git", "GitHub Actions", "Terraform", "Postman", "Linux", "PyTest"]
+            target_roles = ["Senior Full Stack Engineer", "Staff Software Engineer", "AI Application Engineer", "Backend Architect"]
+            target_locations = ["Remote", "San Francisco, CA", "New York, NY", "London, UK", "Copenhagen, Denmark"]
+            
+            cursor.execute(
+                """
+                INSERT INTO profiles (
+                    user_id, name, email, phone, location, github, linkedin, summary,
+                    skills_primary_json, skills_secondary_json, tools_software_json,
+                    target_roles_json, target_locations_json, remote_preference, min_salary
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    "Alex Rivers",
+                    "candidate@aijobsearch.dev",
+                    "+1 (555) 019-2834",
+                    "San Francisco, CA / Remote",
+                    "https://github.com/candidate",
+                    "https://linkedin.com/in/candidate",
+                    "Senior Full-Stack & Systems Engineer with 7+ years of experience architecting distributed cloud systems, modern React frontends, and production AI pipelines.",
+                    json.dumps(skills_primary),
+                    json.dumps(skills_secondary),
+                    json.dumps(tools_software),
+                    json.dumps(target_roles),
+                    json.dumps(target_locations),
+                    "remote",
+                    140000
+                )
+            )

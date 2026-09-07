@@ -12,7 +12,8 @@ from backend.app.api import (
     ats,
     applications,
     interview,
-    automation
+    automation,
+    salary
 )
 
 app = FastAPI(
@@ -47,6 +48,7 @@ app.include_router(ats.router, prefix=settings.API_PREFIX)
 app.include_router(applications.router, prefix=settings.API_PREFIX)
 app.include_router(interview.router, prefix=settings.API_PREFIX)
 app.include_router(automation.router, prefix=settings.API_PREFIX)
+app.include_router(salary.router, prefix=settings.API_PREFIX)
 
 @app.get("/api/health")
 def health_check():
